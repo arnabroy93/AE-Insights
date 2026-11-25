@@ -1,0 +1,8 @@
+{
+  "name": "Remix AE INSIGHT - Academic Excellence Intelligence \u0026 Insights Platform-Final",
+  "description": "Enterprise Academic Excellence Analytics Platform for Anudip Foundation turning academic data into actionable insights.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

@@ -1,0 +1,124 @@
+@import "tailwindcss";
+
+@layer utilities {
+  @keyframes floatSlow {
+    0%, 100% {
+      transform: translate(0px, 0px) rotate(0deg) scale(1);
+    }
+    33% {
+      transform: translate(45px, -55px) rotate(4deg) scale(1.12);
+    }
+    66% {
+      transform: translate(-35px, 35px) rotate(-3deg) scale(0.92);
+    }
+  }
+
+  @keyframes floatReverse {
+    0%, 100% {
+      transform: translate(0px, 0px) rotate(0deg) scale(1);
+    }
+    50% {
+      transform: translate(-50px, -40px) rotate(-5deg) scale(1.18);
+    }
+  }
+
+  @keyframes floatFast {
+    0%, 100% {
+      transform: translate(0px, 0px) scale(1);
+    }
+    40% {
+      transform: translate(30px, -25px) scale(1.08);
+    }
+    80% {
+      transform: translate(-20px, 20px) scale(0.96);
+    }
+  }
+
+  @keyframes pulseGlow {
+    0%, 100% {
+      opacity: 0.35;
+      transform: scale(1);
+    }
+    50% {
+      opacity: 0.65;
+      transform: scale(1.1);
+    }
+  }
+
+  @keyframes particleRise {
+    0% {
+      transform: translateY(100vh) scale(0.6);
+      opacity: 0;
+    }
+    20% {
+      opacity: 0.6;
+    }
+    80% {
+      opacity: 0.6;
+    }
+    100% {
+      transform: translateY(-10vh) scale(1.2);
+      opacity: 0;
+    }
+  }
+
+  @keyframes shimmerBorder {
+    0% {
+      background-position: 0% 50%;
+    }
+    50% {
+      background-position: 100% 50%;
+    }
+    100% {
+      background-position: 0% 50%;
+    }
+  }
+
+  .animate-float-slow {
+    animation: floatSlow 22s ease-in-out infinite;
+  }
+
+  .animate-float-reverse {
+    animation: floatReverse 18s ease-in-out infinite;
+  }
+
+  .animate-float-fast {
+    animation: floatFast 14s ease-in-out infinite;
+  }
+
+  .animate-pulse-glow {
+    animation: pulseGlow 12s ease-in-out infinite;
+  }
+
+  .animate-particle-1 {
+    animation: particleRise 16s linear infinite;
+  }
+
+  .animate-particle-2 {
+    animation: particleRise 22s linear infinite 4s;
+  }
+
+  .animate-particle-3 {
+    animation: particleRise 19s linear infinite 8s;
+  }
+
+  .animate-particle-4 {
+    animation: particleRise 25s linear infinite 2s;
+  }
+
+  .bg-grid-dots {
+    background-image: radial-gradient(rgba(0, 140, 149, 0.12) 1.2px, transparent 1.2px);
+    background-size: 28px 28px;
+  }
+
+  .glass-card-premium {
+    background: rgba(255, 255, 255, 0.92);
+    backdrop-filter: blur(16px);
+    border: 1px solid rgba(226, 232, 240, 0.9);
+    transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .glass-card-premium:hover {
+    box-shadow: 0 12px 28px -6px rgba(0, 140, 149, 0.12), 0 4px 12px -2px rgba(0, 0, 0, 0.04);
+  }
+}
