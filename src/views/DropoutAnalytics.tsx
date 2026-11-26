@@ -49,7 +49,7 @@ import { SourceRow, FilterParams, FilterOptions } from '../types';
 import { ProgramMultiSelect } from '../components/ProgramMultiSelect';
 import { RmMultiSelect } from '../components/RmMultiSelect';
 import { CenterMultiSelect } from '../components/CenterMultiSelect';
-import { getScopedFilterOptions } from '../utils/filterHierarchy';
+import { getScopedFilterOptions, isCollegeModelProgram } from '../utils/filterHierarchy';
 import { api } from '../api';
 
 interface DropoutAnalyticsProps {
@@ -479,23 +479,48 @@ export const DropoutAnalytics: React.FC<DropoutAnalyticsProps> = ({
                   </button>
                 </span>
               )}
-              {currentProgramNames.length > 0 && (
-                <span className="inline-flex items-center gap-1 text-xs px-2.5 py-0.5 rounded-full font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200">
-                  <BookOpen className="w-3 h-3" />
-                  <span>
-                    {currentProgramNames.length === 1
-                      ? `Program: ${currentProgramNames[0]}`
-                      : `Programs: ${currentProgramNames.length} selected`}
+              {currentProgramNames.filter((p) => !isCollegeModelProgram(p)).length > 0 && (() => {
+                const ownSelected = currentProgramNames.filter((p) => !isCollegeModelProgram(p));
+                const collegeSelected = currentProgramNames.filter((p) => isCollegeModelProgram(p));
+                return (
+                  <span className="inline-flex items-center gap-1 text-xs px-2.5 py-0.5 rounded-full font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200">
+                    <BookOpen className="w-3 h-3" />
+                    <span>
+                      {ownSelected.length === 1
+                        ? `Program (Own): ${ownSelected[0]}`
+                        : `Program (Own): ${ownSelected.length} selected`}
+                    </span>
+                    <button
+                      onClick={() => handleProgramsChange(collegeSelected)}
+                      className="ml-0.5 hover:text-emerald-950 cursor-pointer"
+                      title="Clear Program (Own) filter"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
                   </span>
-                  <button
-                    onClick={() => handleProgramsChange([])}
-                    className="ml-0.5 hover:text-emerald-950 cursor-pointer"
-                    title="Clear Program filter"
-                  >
-                    <X className="w-3 h-3" />
-                  </button>
-                </span>
-              )}
+                );
+              })()}
+              {currentProgramNames.filter((p) => isCollegeModelProgram(p)).length > 0 && (() => {
+                const ownSelected = currentProgramNames.filter((p) => !isCollegeModelProgram(p));
+                const collegeSelected = currentProgramNames.filter((p) => isCollegeModelProgram(p));
+                return (
+                  <span className="inline-flex items-center gap-1 text-xs px-2.5 py-0.5 rounded-full font-semibold bg-indigo-50 text-indigo-800 border border-indigo-200">
+                    <BookOpen className="w-3 h-3" />
+                    <span>
+                      {collegeSelected.length === 1
+                        ? `Program (College Model Only): ${collegeSelected[0]}`
+                        : `Program (College Model Only): ${collegeSelected.length} selected`}
+                    </span>
+                    <button
+                      onClick={() => handleProgramsChange(ownSelected)}
+                      className="ml-0.5 hover:text-indigo-950 cursor-pointer"
+                      title="Clear Program (College Model Only) filter"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </span>
+                );
+              })()}
               {(filters?.startDate || filters?.endDate) && (
                 <span className="inline-flex items-center gap-1 text-xs px-2.5 py-0.5 rounded-full font-semibold bg-amber-50 text-amber-800 border border-amber-200">
                   <Clock className="w-3 h-3" />

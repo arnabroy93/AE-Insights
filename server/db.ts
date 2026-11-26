@@ -241,35 +241,25 @@ export async function syncMysqlToSqlite(db?: Database): Promise<number> {
         console.warn('scheduled_vs_conducted sync warning:', e.message);
       }
 
-      // Synchronize slot_replacement if MySQL count differs from SQLite count
+      // Synchronize lightweight distinct batch/center tuples from slot_replacement for filter hierarchy
       try {
-        const [srCntRes]: any = await pool.query('SELECT count(*) as count FROM slot_replacement');
-        const mysqlSrCount = Number(srCntRes?.[0]?.count || 0);
-        let sqliteSrCount = 0;
-        try {
-          const res = targetDb.exec('SELECT count(*) FROM slot_replacement');
-          sqliteSrCount = Number(res[0]?.values[0]?.[0] || 0);
-        } catch {}
-
-        if (mysqlSrCount > 0 && mysqlSrCount !== sqliteSrCount) {
-          const [srRows]: any = await pool.query('SELECT * FROM slot_replacement');
+        const [srRows]: any = await pool.query(`
+          SELECT DISTINCT batch_code, center_code
+          FROM slot_replacement
+          WHERE batch_code IS NOT NULL AND TRIM(batch_code) != ''
+        `);
+        if (srRows && srRows.length > 0) {
           targetDb.run('BEGIN TRANSACTION;');
           targetDb.run('DELETE FROM slot_replacement;');
           const insertSrStmt = targetDb.prepare(`
             INSERT INTO slot_replacement (
-              emp_code, trainer_name, batch_code, alias, actual_class_date,
-              replacement_class_date, center_code, center_name, approved_rejected_by,
-              approval_rejected_date, requested_date, request_status, reason,
-              upload_id, uploaded_by
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              batch_code, center_code
+            ) VALUES (?, ?)
           `);
           for (const sr of srRows) {
             insertSrStmt.run([
-              sr.emp_code ?? null, sr.trainer_name ?? null, sr.batch_code ?? null, sr.alias ?? null,
-              sr.actual_class_date ?? null, sr.replacement_class_date ?? null, sr.center_code ?? null,
-              sr.center_name ?? null, sr.approved_rejected_by ?? null, sr.approval_rejected_date ?? null,
-              sr.requested_date ?? null, sr.request_status ?? null, sr.reason ?? null,
-              sr.upload_id ?? null, sr.uploaded_by ?? null
+              sr.batch_code ?? null,
+              sr.center_code ?? null
             ]);
           }
           insertSrStmt.free();
@@ -313,46 +303,42 @@ export async function syncMysqlToSqlite(db?: Database): Promise<number> {
         console.warn('challenges sync warning:', e.message);
       }
 
-      // Synchronize Exception_App_Rpt if needed
+      // Synchronize Exception_App_Rpt using in-memory student_code set to avoid slow unindexed LOWER(TRIM()) MySQL joins
       try {
-        const [exCountRes]: any = await pool.query('SELECT count(*) as count FROM Exception_App_Rpt');
-        const mysqlExCount = Number(exCountRes?.[0]?.count || 0);
-
-        let sqliteExCount = 0;
-        try {
-          const res = targetDb.exec('SELECT count(*) FROM Exception_App_Rpt');
-          sqliteExCount = Number(res[0]?.values[0]?.[0] || 0);
-        } catch (e) {}
-
-        if (mysqlExCount > 0 && mysqlExCount !== sqliteExCount) {
-          const [exRows]: any = await pool.query(`
-            SELECT DISTINCT e.*
-            FROM Exception_App_Rpt e
-            INNER JOIN raw_records r ON LOWER(TRIM(COALESCE(e.student_code, ''))) = LOWER(TRIM(COALESCE(r.student_code, '')))
-          `);
-          targetDb.run('BEGIN TRANSACTION;');
-          targetDb.run('DELETE FROM Exception_App_Rpt;');
-          const insertExStmt = targetDb.prepare(`
-            INSERT INTO Exception_App_Rpt (
-              id, date, batch_code, student_code, student_name, center_code, center_name,
-              reason, remarks, status, created_by, created_by_email, cm_name, cm_email,
-              approval_remarks, approved_by, approved_by_email, approved_date,
-              exception_remove_status, exception_remove_date
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-          `);
-          for (const r of exRows) {
-            insertExStmt.run([
-              r.id ?? null, r.date ?? null, r.batch_code ?? null, r.student_code ?? null, r.student_name ?? null,
-              r.center_code ?? null, r.center_name ?? null, r.reason ?? null, r.remarks ?? null,
-              r.status ?? null, r.created_by ?? null, r.created_by_email ?? null, r.cm_name ?? null,
-              r.cm_email ?? null, r.approval_remarks ?? null, r.approved_by ?? null,
-              r.approved_by_email ?? null, r.approved_date ?? null, r.exception_remove_status ?? null,
-              r.exception_remove_date ?? null
-            ].map(v => v === undefined ? null : v));
-          }
-          insertExStmt.free();
-          targetDb.run('COMMIT;');
+        const rawStudentCodeSet = new Set<string>();
+        for (const r of rows || []) {
+          const sc = String(r.student_code || '').trim().toLowerCase();
+          if (sc) rawStudentCodeSet.add(sc);
         }
+
+        const [allExRows]: any = await pool.query('SELECT * FROM Exception_App_Rpt');
+        const exRows = (allExRows || []).filter((e: any) => {
+          const sc = String(e.student_code || '').trim().toLowerCase();
+          return sc && rawStudentCodeSet.has(sc);
+        });
+
+        targetDb.run('BEGIN TRANSACTION;');
+        targetDb.run('DELETE FROM Exception_App_Rpt;');
+        const insertExStmt = targetDb.prepare(`
+          INSERT INTO Exception_App_Rpt (
+            id, date, batch_code, student_code, student_name, center_code, center_name,
+            reason, remarks, status, created_by, created_by_email, cm_name, cm_email,
+            approval_remarks, approved_by, approved_by_email, approved_date,
+            exception_remove_status, exception_remove_date
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+        for (const r of exRows) {
+          insertExStmt.run([
+            r.id ?? null, r.date ?? null, r.batch_code ?? null, r.student_code ?? null, r.student_name ?? null,
+            r.center_code ?? null, r.center_name ?? null, r.reason ?? null, r.remarks ?? null,
+            r.status ?? null, r.created_by ?? null, r.created_by_email ?? null, r.cm_name ?? null,
+            r.cm_email ?? null, r.approval_remarks ?? null, r.approved_by ?? null,
+            r.approved_by_email ?? null, r.approved_date ?? null, r.exception_remove_status ?? null,
+            r.exception_remove_date ?? null
+          ].map(v => v === undefined ? null : v));
+        }
+        insertExStmt.free();
+        targetDb.run('COMMIT;');
       } catch (e: any) {
         try { targetDb.run('ROLLBACK;'); } catch {}
         console.warn('Exception_App_Rpt sync warning:', e.message);

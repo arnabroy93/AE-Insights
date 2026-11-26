@@ -23,7 +23,6 @@ import {
   X,
   CalendarDays,
   Activity,
-  Radio,
 } from 'lucide-react';
 import { Header } from './components/Header';
 import { GlobalFilterBar } from './components/GlobalFilterBar';
@@ -59,7 +58,6 @@ import { AdminPortalView } from './views/AdminPortalView';
 import { ChallengesView } from './views/ChallengesView';
 import { HiringConcernsView } from './views/HiringConcernsView';
 import { UserGuideView } from './views/UserGuideView';
-import { ActiveUsersView } from './views/ActiveUsersView';
 
 import { api } from './api';
 import {
@@ -72,18 +70,7 @@ import {
   RunningBatchAnalyticsData,
   ClosedBatchAnalyticsData,
   ChallengeRecord,
-  LivePresenceData,
 } from './types';
-import {
-  BrowserUserProfile,
-  getOrCreateSessionMeta,
-  detectBrowserAndOs,
-  getSavedBrowserGmailProfile,
-  saveBrowserGmailProfile,
-  trySilentBrowserCredentialDetection,
-  formatNameFromGmail,
-  decodeJwtPayload,
-} from './utils/browserPresence';
 
 export default function App() {
   const checkIsAdminPath = () =>
@@ -115,7 +102,7 @@ export default function App() {
       if (isAdmin) {
         setCurrentRole('Admin');
         setCurrentView((prev) =>
-          ['explorer', 'upload', 'challenges', 'quality', 'history', 'settings', 'user_guide', 'active_users'].includes(prev) ? prev : 'explorer'
+          ['explorer', 'upload', 'challenges', 'quality', 'history', 'settings', 'user_guide'].includes(prev) ? prev : 'explorer'
         );
       } else {
         setCurrentView((prev) =>
@@ -171,21 +158,6 @@ export default function App() {
 
   const [loading, setLoading] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
-
-  // Live Active User Presence & Logged-In Browser Gmail state
-  const [sessionMeta] = useState(() => getOrCreateSessionMeta());
-  const [browserUserProfile, setBrowserUserProfile] = useState<BrowserUserProfile>(() => {
-    const saved = getSavedBrowserGmailProfile();
-    if (saved) return saved;
-    return {
-      email: 'arnabredmi3sprime@gmail.com',
-      userName: formatNameFromGmail('arnabredmi3sprime@gmail.com'),
-      avatarUrl: null,
-      source: 'browser_session',
-    };
-  });
-  const [livePresenceData, setLivePresenceData] = useState<LivePresenceData | null>(null);
-  const [isPresenceRefreshing, setIsPresenceRefreshing] = useState(false);
 
   // Google Meet Presentation Focus Mode state
   const [meetingPresenterState, setMeetingPresenterState] = useState<{
@@ -401,7 +373,6 @@ export default function App() {
         { id: 'quality', label: 'Data Quality', icon: ShieldCheck, section: 'Governance' },
         { id: 'history', label: 'Upload History', icon: History, section: 'Governance' },
         { id: 'settings', label: 'Settings & Restore', icon: Settings2, section: 'Governance' },
-        { id: 'active_users', label: 'Active Users (Live)', icon: Radio, section: 'Governance' },
         { id: 'user_guide', label: 'User Guide (PDF)', icon: BookOpen, section: 'Governance' },
       ]
     : [
@@ -418,149 +389,6 @@ export default function App() {
         { id: 'reports', label: 'Reports', icon: FileText, section: 'Intelligence & Reports' },
         { id: 'user_guide', label: 'User Guide (PDF)', icon: BookOpen, section: 'Intelligence & Reports' },
       ];
-
-  const currentViewLabel =
-    navigationItems.find((n) => n.id === currentView)?.label || 'Dashboard';
-
-  const sendLiveHeartbeat = async (overrideProfile?: BrowserUserProfile) => {
-    try {
-      const profile = overrideProfile || browserUserProfile;
-      const { browserInfo, deviceOs } = detectBrowserAndOs();
-      const hostOrigin = typeof window !== 'undefined' ? window.location.host : 'localhost';
-      const data = await api.sendPresenceHeartbeat({
-        sessionId: sessionMeta.sessionId,
-        email: profile.email,
-        userName: profile.userName,
-        avatarUrl: profile.avatarUrl || null,
-        userRole: currentRole,
-        currentView,
-        currentViewLabel,
-        portalMode: isAdminPortal ? 'Admin Portal (/admin)' : 'Main Dashboard',
-        browserInfo,
-        deviceOs,
-        hostOrigin,
-        startedAt: sessionMeta.startedAt,
-      });
-      setLivePresenceData(data);
-    } catch (err) {
-      console.warn('Heartbeat sync warning:', err);
-    }
-  };
-
-  const handleRefreshPresence = async () => {
-    setIsPresenceRefreshing(true);
-    try {
-      await sendLiveHeartbeat();
-    } finally {
-      setIsPresenceRefreshing(false);
-    }
-  };
-
-  const handleUpdateBrowserUser = (email: string, userName?: string) => {
-    const updated = saveBrowserGmailProfile({
-      email,
-      userName: userName || formatNameFromGmail(email),
-      avatarUrl: browserUserProfile.avatarUrl || null,
-      source: 'browser_storage',
-    });
-    setBrowserUserProfile(updated);
-    sendLiveHeartbeat(updated);
-  };
-
-  // Detect browser Gmail on mount (Silent Browser Credentials / Google Identity / Headers)
-  useEffect(() => {
-    let isMounted = true;
-    const initIdentity = async () => {
-      const saved = getSavedBrowserGmailProfile();
-      if (saved) {
-        if (isMounted) setBrowserUserProfile(saved);
-        return;
-      }
-
-      const silentCred = await trySilentBrowserCredentialDetection();
-      if (silentCred && isMounted) {
-        setBrowserUserProfile(silentCred);
-        return;
-      }
-
-      try {
-        const serverDetected = await api.detectBrowserUser();
-        if (serverDetected && serverDetected.email && isMounted) {
-          const prof: BrowserUserProfile = {
-            email: serverDetected.email,
-            userName: serverDetected.userName || formatNameFromGmail(serverDetected.email),
-            avatarUrl: null,
-            source: serverDetected.source === 'google_browser_header' ? 'google_header' : 'browser_session',
-          };
-          setBrowserUserProfile(prof);
-
-          // If Google Client ID is configured and google.accounts.id is loaded, attempt One Tap auto-select
-          const w = window as any;
-          if (serverDetected.googleClientId && w.google?.accounts?.id) {
-            try {
-              w.google.accounts.id.initialize({
-                client_id: serverDetected.googleClientId,
-                auto_select: true,
-                callback: (response: any) => {
-                  const decoded = decodeJwtPayload(response.credential);
-                  if (decoded?.email && isMounted) {
-                    const gsiProf = saveBrowserGmailProfile({
-                      email: decoded.email,
-                      userName: decoded.name || formatNameFromGmail(decoded.email),
-                      avatarUrl: decoded.picture || null,
-                      source: 'google_gsi',
-                    });
-                    setBrowserUserProfile(gsiProf);
-                  }
-                },
-              });
-              w.google.accounts.id.prompt();
-            } catch {
-              // ignore GSI errors
-            }
-          }
-        }
-      } catch {
-        // fallback already set
-      }
-    };
-
-    initIdentity();
-    return () => {
-      isMounted = false;
-    };
-  }, []);
-
-  // Periodic live presence heartbeat (every 10 seconds + on view/role/user change)
-  useEffect(() => {
-    sendLiveHeartbeat();
-    const interval = setInterval(() => {
-      sendLiveHeartbeat();
-    }, 10000);
-    return () => clearInterval(interval);
-  }, [currentView, currentRole, isAdminPortal, browserUserProfile.email, browserUserProfile.userName]);
-
-  // Send offline beacon when browser tab closes
-  useEffect(() => {
-    const handleUnload = () => {
-      try {
-        if (navigator.sendBeacon) {
-          const blob = new Blob([JSON.stringify({ sessionId: sessionMeta.sessionId })], {
-            type: 'application/json',
-          });
-          navigator.sendBeacon('/api/presence/leave', blob);
-        }
-      } catch {
-        // ignore
-      }
-    };
-    window.addEventListener('pagehide', handleUnload);
-    window.addEventListener('beforeunload', handleUnload);
-    return () => {
-      window.removeEventListener('pagehide', handleUnload);
-      window.removeEventListener('beforeunload', handleUnload);
-    };
-  }, [sessionMeta.sessionId]);
 
   const visibleSections = isAdminPortal
     ? ['Data & Tools', 'Governance']
@@ -601,10 +429,6 @@ export default function App() {
         onOpenClearModal={isAdminPortal ? () => setIsClearModalOpen(true) : undefined}
         onOpenRestore={isAdminPortal ? () => navigateToView('settings') : undefined}
         onOpenUserGuide={() => navigateToView('user_guide')}
-        onOpenActiveUsers={isAdminPortal ? () => navigateToView('active_users') : undefined}
-        liveActiveCount={livePresenceData?.activeUsers?.length || 1}
-        browserUserEmail={browserUserProfile.email}
-        browserUserName={browserUserProfile.userName}
         isAdminPortal={isAdminPortal}
       />
 
@@ -677,30 +501,12 @@ export default function App() {
                             className={`w-4 h-4 shrink-0 ${
                               isActive
                                 ? 'text-white'
-                                : item.id === 'active_users'
-                                ? 'text-emerald-600 animate-pulse'
                                 : 'text-[#008C95] group-hover/nav:scale-110 transition-transform'
                             }`}
                           />
                           <span className="leading-snug">{item.label}</span>
                         </div>
                         <div className="flex items-center gap-1.5 shrink-0">
-                          {item.id === 'active_users' && (
-                            <span
-                              className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-extrabold ${
-                                isActive
-                                  ? 'bg-white/20 text-white'
-                                  : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-                              }`}
-                            >
-                              <span
-                                className={`w-1.5 h-1.5 rounded-full ${
-                                  isActive ? 'bg-emerald-300' : 'bg-emerald-500 animate-ping'
-                                }`}
-                              />
-                              {livePresenceData?.activeUsers?.length || 1}
-                            </span>
-                          )}
                           {isActive && <ChevronRight className="w-3.5 h-3.5 text-white shrink-0" />}
                         </div>
                       </div>
@@ -875,17 +681,6 @@ export default function App() {
           {currentView === 'ai' && <AiInsights filters={filters} />}
 
           {currentView === 'reports' && <ReportsCenter filters={filters} />}
-
-          {currentView === 'active_users' && (
-            <ActiveUsersView
-              presenceData={livePresenceData}
-              currentUserProfile={browserUserProfile}
-              currentSessionId={sessionMeta.sessionId}
-              onUpdateBrowserUser={handleUpdateBrowserUser}
-              onRefreshPresence={handleRefreshPresence}
-              isRefreshing={isPresenceRefreshing}
-            />
-          )}
 
           {currentView === 'user_guide' && <UserGuideView />}
 

@@ -123,10 +123,30 @@ export const GlobalFilterBar: React.FC<GlobalFilterBarProps> = ({
           </select>
         </div>
 
-        {/* Program Multi-Select */}
+        {/* Program (Own) Multi-Select */}
         <div>
-          <label className="block text-[11px] font-semibold text-slate-600 mb-1">Program</label>
+          <label className="block text-[11px] font-semibold text-slate-600 mb-1">Program (Own)</label>
           <ProgramMultiSelect
+            mode="own"
+            options={scopedOptions.programOptions}
+            selectedPrograms={filters.programNames}
+            selectedProgram={filters.programName}
+            onChange={(selected) => {
+              onChange({
+                ...filters,
+                programNames: selected.length > 0 ? selected : undefined,
+                programName: selected.length === 1 ? selected[0] : (selected.length > 1 ? selected.join(',') : undefined),
+              });
+            }}
+            className="w-full"
+          />
+        </div>
+
+        {/* Program (College Model Only) Multi-Select */}
+        <div>
+          <label className="block text-[11px] font-semibold text-slate-600 mb-1">Program (College Model Only)</label>
+          <ProgramMultiSelect
+            mode="college"
             options={scopedOptions.programOptions}
             selectedPrograms={filters.programNames}
             selectedProgram={filters.programName}

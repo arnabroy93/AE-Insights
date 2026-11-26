@@ -1,5 +1,39 @@
 import { FilterOptions, FilterParams } from '../types';
 
+const COLLEGE_MODEL_ONLY_PROGRAM_KEYS = new Set<string>([
+  'cisco 26-27 diya',
+  'eygds 26-27 ai',
+  'eygds 26-27 diya',
+  'ibm livelihood',
+]);
+
+export function normalizeProgramKey(name?: string | null): string {
+  return String(name || '')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .toLowerCase();
+}
+
+export function isCollegeModelProgram(name?: string | null): boolean {
+  return COLLEGE_MODEL_ONLY_PROGRAM_KEYS.has(normalizeProgramKey(name));
+}
+
+export function partitionPrograms(programs: string[]): {
+  ownPrograms: string[];
+  collegeModelPrograms: string[];
+} {
+  const ownPrograms: string[] = [];
+  const collegeModelPrograms: string[] = [];
+  for (const p of programs) {
+    if (isCollegeModelProgram(p)) {
+      collegeModelPrograms.push(p);
+    } else {
+      ownPrograms.push(p);
+    }
+  }
+  return { ownPrograms, collegeModelPrograms };
+}
+
 export function extractSelectedList(arrayVal?: string[], singleVal?: string): string[] {
   if (arrayVal && Array.isArray(arrayVal) && arrayVal.length > 0) {
     return arrayVal.map(v => v.trim()).filter(v => v && v !== 'ALL');

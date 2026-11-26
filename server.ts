@@ -83,7 +83,111 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-const PORT = Number(process.env.PORT) || 3000;
+
+function resolveServerPort(): number {
+  const portArgIdx = process.argv.findIndex((arg) => arg === '--port' || arg === '-p');
+  if (portArgIdx !== -1 && process.argv[portArgIdx + 1]) {
+    const parsed = Number(process.argv[portArgIdx + 1]);
+    if (Number.isFinite(parsed) && parsed > 0) return parsed;
+  }
+  const portEqArg = process.argv.find((arg) => arg.startsWith('--port='));
+  if (portEqArg) {
+    const parsed = Number(portEqArg.split('=')[1]);
+    if (Number.isFinite(parsed) && parsed > 0) return parsed;
+  }
+  // Avoid colliding with AI Studio's Nginx reverse proxy on port 8080
+  if (process.env.NGINX_PORT && process.env.PORT && String(process.env.NGINX_PORT) === String(process.env.PORT)) {
+    const defaultPort = Number(process.env.DEFAULT_APP_PORT);
+    return Number.isFinite(defaultPort) && defaultPort > 0 ? defaultPort : 3000;
+  }
+  const envPort = Number(process.env.PORT);
+  return Number.isFinite(envPort) && envPort > 0 ? envPort : 3000;
+}
+
+const PORT = resolveServerPort();
+
+process.on('uncaughtException', (err) => {
+  console.error('[AE INSIGHT Uncaught Exception]:', err);
+});
+
+process.on('unhandledRejection', (reason) => {
+  console.error('[AE INSIGHT Unhandled Rejection]:', reason);
+});
+
+app.get(['/health', '/api/health'], (_req, res) => {
+  res.status(200).json({ status: 'ok', port: PORT, timestamp: Date.now() });
+});
+
+// Direct forced-attachment download routes for standalone generated PDF report (not linked in portal UI)
+const DIYA_REPORT_FILENAME = 'AE_INSIGHT_Diya_Only_RM_Analysis_01_25_Nov_2026.pdf';
+function resolveDiyaReportPath(): string | null {
+  const candidates = [
+    path.join(__dirname, 'public', 'downloads', DIYA_REPORT_FILENAME),
+    path.join(__dirname, 'dist', 'downloads', DIYA_REPORT_FILENAME),
+  ];
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  return null;
+}
+
+app.get(
+  [`/downloads/${DIYA_REPORT_FILENAME}`, '/api/download-report/diya-nov-2026'],
+  (_req, res) => {
+    const filePath = resolveDiyaReportPath();
+    if (!filePath) {
+      return res.status(404).send('Report PDF not found.');
+    }
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${DIYA_REPORT_FILENAME}"`);
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    return res.sendFile(filePath);
+  }
+);
+
+app.get('/downloads/diya-nov-2026', (_req, res) => {
+  const filePath = resolveDiyaReportPath();
+  if (!filePath) {
+    return res.status(404).send('Report PDF not found.');
+  }
+  const sizeKb = Math.round(fs.statSync(filePath).size / 1024);
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-store');
+  return res.send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Download — ${DIYA_REPORT_FILENAME}</title>
+  <style>
+    body { margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; background:#0F172A; color:#F8FAFC; min-height:100vh; display:flex; align-items:center; justify-content:center; padding:24px; }
+    .card { background:#1E293B; border:1px solid #334155; border-top:4px solid #00B4BF; border-radius:12px; max-width:520px; width:100%; padding:28px; box-shadow:0 20px 50px rgba(0,0,0,0.4); }
+    h1 { margin:0 0 8px; font-size:20px; font-weight:800; }
+    p { margin:0 0 20px; font-size:13.5px; color:#CBD5E1; line-height:1.5; }
+    .btn { display:inline-block; background:#008C95; color:#FFFFFF; text-decoration:none; font-weight:700; font-size:14px; padding:12px 22px; border-radius:8px; cursor:pointer; border:none; }
+    .btn:hover { background:#00A3AD; }
+    .meta { margin-top:14px; font-size:12px; color:#94A3B8; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Diya Only RM Analysis (01–25 Nov 2026)</h1>
+    <p>Your 12-slide 16:9 widescreen PDF report (${sizeKb} KB) should begin downloading automatically. If it did not start, click the button below.</p>
+    <a id="dlBtn" class="btn" href="/api/download-report/diya-nov-2026" download="${DIYA_REPORT_FILENAME}">Download 16:9 PDF (${sizeKb} KB)</a>
+    <div class="meta">File: ${DIYA_REPORT_FILENAME}</div>
+  </div>
+  <script>
+    window.addEventListener('DOMContentLoaded', function() {
+      setTimeout(function() {
+        var a = document.getElementById('dlBtn');
+        if (a) a.click();
+      }, 300);
+    });
+  </script>
+</body>
+</html>`);
+});
 
 // Setup Multer for memory upload with error handling
 const upload = multer({
@@ -1493,10 +1597,15 @@ app.get('/api/debug/query-counts', async (req, res) => {
 });
 
 async function startServer() {
-  const isDev = process.env.NODE_ENV !== 'production';
+  const distIndexPath = path.join(__dirname, 'dist', 'index.html');
+  const hasBuiltDist = fs.existsSync(distIndexPath);
+  const isPreOrProd =
+    process.env.NODE_ENV === 'production' ||
+    Boolean(process.env.K_SERVICE && process.env.K_SERVICE.startsWith('ais-pre'));
+  const useViteDev = !isPreOrProd || !hasBuiltDist;
   let vite: any = null;
 
-  if (isDev) {
+  if (useViteDev) {
     try {
       const { createServer: createViteServer } = await import('vite');
       vite = await createViteServer({
@@ -1531,7 +1640,6 @@ async function startServer() {
       }
     }
 
-    const distIndexPath = path.join(__dirname, 'dist', 'index.html');
     if (fs.existsSync(distIndexPath)) {
       return res.sendFile(distIndexPath);
     }
@@ -1540,7 +1648,7 @@ async function startServer() {
   });
 
   app.listen(PORT, '0.0.0.0', () => {
-    console.log(`[AE INSIGHT Server] Running on port ${PORT}`);
+    console.log(`[AE INSIGHT Server] Running on port ${PORT} (mode=${useViteDev ? 'vite-dev' : 'static-dist'})`);
     // Warm up database asynchronously after binding port so Cloud Run health checks succeed immediately
     getDb().catch((err) => {
       console.error('Background DB warmup error:', err);

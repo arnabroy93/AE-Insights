@@ -130,7 +130,6 @@ export async function getMysqlPool(): Promise<Pool | null> {
     lastConnectionError = null;
     connectionFailed = false;
     lastConnectionFailureTime = 0;
-    initMysqlTables(pool).catch(() => {});
     return mysqlPool;
   } catch (err: any) {
     lastConnectionError = err.message || String(err);
@@ -515,28 +514,40 @@ export async function initMysqlTables(pool?: Pool): Promise<{ success: boolean; 
     // Ignore if column already exists
   }
 
-  // Migrate all 7 date columns in raw_records to DATE NULL datatype
-  for (const dateCol of RAW_RECORD_DATE_COLUMNS) {
-    try {
-      await targetPool.query(
-        `UPDATE raw_records
-         SET \`${dateCol}\` = CASE
-           WHEN \`${dateCol}\` IS NULL OR TRIM(CAST(\`${dateCol}\` AS CHAR)) = '' OR TRIM(CAST(\`${dateCol}\` AS CHAR)) = '0000-00-00' THEN NULL
-           WHEN TRIM(CAST(\`${dateCol}\` AS CHAR)) REGEXP '^[0-9]{4}-[0-9]{2}-[0-9]{2}' THEN SUBSTRING(TRIM(CAST(\`${dateCol}\` AS CHAR)), 1, 10)
-           WHEN STR_TO_DATE(SUBSTRING_INDEX(TRIM(CAST(\`${dateCol}\` AS CHAR)), ' ', 1), '%d/%m/%Y') IS NOT NULL THEN DATE_FORMAT(STR_TO_DATE(SUBSTRING_INDEX(TRIM(CAST(\`${dateCol}\` AS CHAR)), ' ', 1), '%d/%m/%Y'), '%Y-%m-%d')
-           WHEN STR_TO_DATE(SUBSTRING_INDEX(TRIM(CAST(\`${dateCol}\` AS CHAR)), ' ', 1), '%d-%m-%Y') IS NOT NULL THEN DATE_FORMAT(STR_TO_DATE(SUBSTRING_INDEX(TRIM(CAST(\`${dateCol}\` AS CHAR)), ' ', 1), '%d-%m-%Y'), '%Y-%m-%d')
-           ELSE NULL
-         END
-         WHERE \`${dateCol}\` IS NOT NULL;`
-      );
-    } catch (e) {
-      // Ignore if column is already DATE
+  // Migrate any non-DATE date columns in raw_records to DATE NULL datatype
+  try {
+    const [colRows]: any = await targetPool.query(
+      `SELECT COLUMN_NAME, DATA_TYPE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'raw_records'`
+    );
+    const colTypes = new Map<string, string>(
+      (colRows || []).map((c: any) => [String(c.COLUMN_NAME).toLowerCase(), String(c.DATA_TYPE).toLowerCase()])
+    );
+
+    for (const dateCol of RAW_RECORD_DATE_COLUMNS) {
+      if (colTypes.get(dateCol.toLowerCase()) === 'date') continue;
+      try {
+        await targetPool.query(
+          `UPDATE raw_records
+           SET \`${dateCol}\` = CASE
+             WHEN \`${dateCol}\` IS NULL OR TRIM(CAST(\`${dateCol}\` AS CHAR)) = '' OR TRIM(CAST(\`${dateCol}\` AS CHAR)) = '0000-00-00' THEN NULL
+             WHEN TRIM(CAST(\`${dateCol}\` AS CHAR)) REGEXP '^[0-9]{4}-[0-9]{2}-[0-9]{2}' THEN SUBSTRING(TRIM(CAST(\`${dateCol}\` AS CHAR)), 1, 10)
+             WHEN STR_TO_DATE(SUBSTRING_INDEX(TRIM(CAST(\`${dateCol}\` AS CHAR)), ' ', 1), '%d/%m/%Y') IS NOT NULL THEN DATE_FORMAT(STR_TO_DATE(SUBSTRING_INDEX(TRIM(CAST(\`${dateCol}\` AS CHAR)), ' ', 1), '%d/%m/%Y'), '%Y-%m-%d')
+             WHEN STR_TO_DATE(SUBSTRING_INDEX(TRIM(CAST(\`${dateCol}\` AS CHAR)), ' ', 1), '%d-%m-%Y') IS NOT NULL THEN DATE_FORMAT(STR_TO_DATE(SUBSTRING_INDEX(TRIM(CAST(\`${dateCol}\` AS CHAR)), ' ', 1), '%d-%m-%Y'), '%Y-%m-%d')
+             ELSE NULL
+           END
+           WHERE \`${dateCol}\` IS NOT NULL;`
+        );
+      } catch (e) {
+        // Ignore if column is already DATE
+      }
+      try {
+        await targetPool.query(`ALTER TABLE raw_records MODIFY COLUMN \`${dateCol}\` DATE NULL;`);
+      } catch (e) {
+        console.warn(`[MySQL] Could not alter raw_records.${dateCol} to DATE NULL:`, (e as any)?.message || e);
+      }
     }
-    try {
-      await targetPool.query(`ALTER TABLE raw_records MODIFY COLUMN \`${dateCol}\` DATE NULL;`);
-    } catch (e) {
-      console.warn(`[MySQL] Could not alter raw_records.${dateCol} to DATE NULL:`, (e as any)?.message || e);
-    }
+  } catch (e) {
+    // Ignore metadata inspection failure
   }
 
   return {

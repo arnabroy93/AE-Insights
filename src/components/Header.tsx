@@ -15,8 +15,6 @@ import {
   History,
   ShieldCheck,
   Globe,
-  Radio,
-  Mail,
 } from 'lucide-react';
 import { UploadRecord } from '../types';
 
@@ -34,10 +32,6 @@ interface HeaderProps {
   onOpenClearModal?: () => void;
   onOpenRestore?: () => void;
   onOpenUserGuide?: () => void;
-  onOpenActiveUsers?: () => void;
-  liveActiveCount?: number;
-  browserUserEmail?: string;
-  browserUserName?: string;
   isAdminPortal?: boolean;
 }
 
@@ -53,10 +47,6 @@ export const Header: React.FC<HeaderProps> = ({
   isRefreshing,
   onOpenClearModal,
   onOpenRestore,
-  onOpenActiveUsers,
-  liveActiveCount = 1,
-  browserUserEmail = 'arnabredmi3sprime@gmail.com',
-  browserUserName = 'Arnab',
   isAdminPortal,
 }) => {
   const [roleDropdownOpen, setRoleDropdownOpen] = React.useState(false);
@@ -151,29 +141,6 @@ export const Header: React.FC<HeaderProps> = ({
               </span>
             )}
           </button>
-
-          {/* Live Active Users & Browser Gmail Button */}
-          {onOpenActiveUsers && (
-            <button
-              onClick={onOpenActiveUsers}
-              className="flex items-center gap-2 px-2.5 py-1.5 bg-emerald-50/90 hover:bg-emerald-100/80 border border-emerald-200 rounded-lg text-xs transition-colors cursor-pointer"
-              title={`Logged-in Browser Gmail: ${browserUserEmail} (${browserUserName}) · Click to view Live Active Users`}
-            >
-              <span className="relative flex h-2 w-2 shrink-0">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
-              </span>
-              <div className="hidden md:flex items-center gap-1.5 min-w-0">
-                <Mail className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
-                <span className="font-mono font-semibold text-emerald-900 truncate max-w-[165px]">
-                  {browserUserEmail}
-                </span>
-              </div>
-              <span className="inline-flex items-center justify-center px-1.5 py-0.5 text-[10px] font-extrabold bg-emerald-600 text-white rounded-full">
-                {liveActiveCount} Live
-              </span>
-            </button>
-          )}
 
           {/* User Role Switcher */}
           <div className="relative">
